@@ -85,6 +85,13 @@ public class NomenclatureIntegrationTest {
 	public void testFlavonoids(String name, String expectedInchi) {
 		checkName(name, expectedInchi);
 	}
+
+
+@ParameterizedTest
+	@CsvFileSource(resources = "partiallyUnsaturatedRings.txt", delimiter='\t')
+	public void testPartiallyUnsaturatedRings(String name, String expectedInchi) {
+		checkName(name, expectedInchi);
+	}
 	
 	@ParameterizedTest
 	@CsvFileSource(resources = "functionalReplacement.txt", delimiter='\t')
