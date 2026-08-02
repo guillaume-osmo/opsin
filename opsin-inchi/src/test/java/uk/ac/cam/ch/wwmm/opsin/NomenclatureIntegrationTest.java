@@ -171,6 +171,12 @@ public class NomenclatureIntegrationTest {
 	}
 	
 	@ParameterizedTest
+	@CsvFileSource(resources = "bridgedRingStereochemistry.txt", delimiter='\t')
+	public void testBridgedRingStereochemistry(String name, String expectedInchi) {
+		checkName(name, expectedInchi);
+	}
+	
+	@ParameterizedTest
 	@CsvFileSource(resources = "detachablePrefixes.txt", delimiter='\t')
 	public void testDetachablePrefixes(String name, String expectedInchi) {
 		checkName(name, expectedInchi);

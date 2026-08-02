@@ -10,3 +10,10 @@ oxychloride
 phenaleno[1,9b-c]thiophene
 1,1,1-triazole
 1,1,2-thiadiazole
+exo-bicyclo[2.2.2]octan-2-ol
+endo-bicyclo[2.2.2]octan-2-ol
+exo-cyclohexan-1-ol
+exo-adamantan-1-ol
+exo-bicyclo[2.2.1]heptane
+exo-2,3-dibromobicyclo[2.2.1]heptane
+syn-7-bromobicyclo[2.2.1]heptane

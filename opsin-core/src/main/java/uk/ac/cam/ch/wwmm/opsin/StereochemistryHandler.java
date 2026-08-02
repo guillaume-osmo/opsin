@@ -2,8 +2,10 @@ package uk.ac.cam.ch.wwmm.opsin;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -171,7 +173,7 @@ class StereochemistryHandler {
 			applyGlobalRacOrRelFlags(stereoChemistryEl, StereoGroupType.Rel);
 		}
 		else if (stereoChemistryType.equals(ENDO_EXO_SYN_ANTI_TYPE_VAL)){
-			throw new StereochemistryException(stereoChemistryType + " stereochemistry is not currently interpretable by OPSIN");
+			assignEndoExoSynAntiStereochem(stereoChemistryEl);
 		}
 		else if (stereoChemistryType.equals(RELATIVECISTRANS_TYPE_VAL)){
 			throw new StereochemistryException(stereoChemistryType + " stereochemistry is not currently interpretable by OPSIN");
@@ -784,6 +786,370 @@ class StereochemistryHandler {
 			}
 		}		
 		return null;
+	}
+
+	/**
+	 * Handles endo/exo/syn/anti stereochemistry (cf. IUPAC 2013 recommendations P-93.5.2.2.1)
+	 * These descriptors are only meaningful on bicyclic von Baeyer ring systems i.e. two bridgeheads
+	 * joined by three bridges.
+	 * exo/endo describe a substituent on one of the two main bridges; exo is on the same side of the
+	 * main ring as the highest numbered (shortest) bridge, endo is on the opposite side.
+	 * syn/anti describe a substituent on the shortest bridge; syn is on the same side as the lowest
+	 * numbered main bridge, anti is on the opposite side.
+	 * These are relative stereodescriptors (they are unchanged by reflection) so the stereocentres
+	 * that they define are flagged as relative stereochemistry.
+	 * Assigning the substituted atom alone would be insufficient; both bridgeheads must be assigned
+	 * in the same operation as it is the arrangement relative to the bridge that is being described.
+	 * @param stereoChemistryEl
+	 * @throws StructureBuildingException
+	 * @throws StereochemistryException
+	 */
+	private void assignEndoExoSynAntiStereochem(Element stereoChemistryEl) throws StructureBuildingException, StereochemistryException {
+		Element parentSubBracketOrRoot = stereoChemistryEl.getParent();
+		List<Fragment> possibleFragments = StructureBuildingMethods.findAlternativeFragments(parentSubBracketOrRoot);
+		List<Element> adjacentGroupEls = OpsinTools.getDescendantElementsWithTagName(parentSubBracketOrRoot, GROUP_EL);
+		for (int i = adjacentGroupEls.size() - 1; i >= 0; i--) {
+			possibleFragments.add(adjacentGroupEls.get(i).getFrag());
+		}
+		for (Fragment fragment : possibleFragments) {
+			if (attemptAssignmentOfEndoExoSynAntiToFragment(fragment, stereoChemistryEl)) {
+				return;
+			}
+		}
+
+		Element possibleWordParent = parentSubBracketOrRoot.getParent();
+		if (possibleWordParent.getName().equals(WORD_EL) && possibleWordParent.getChild(0).equals(parentSubBracketOrRoot)){
+			//stereochemistry is in a different word to what it is applied to
+			List<Element> words = OpsinTools.getNextSiblingsOfType(possibleWordParent, WORD_EL);
+			for (Element word : words) {
+				List<Element> possibleGroups = OpsinTools.getDescendantElementsWithTagName(word, GROUP_EL);
+				for (int i = possibleGroups.size() - 1; i >= 0; i--) {
+					if (attemptAssignmentOfEndoExoSynAntiToFragment(possibleGroups.get(i).getFrag(), stereoChemistryEl)) {
+						return;
+					}
+				}
+			}
+		}
+		throw new StereochemistryException(stereoChemistryEl.getAttributeValue(VALUE_ATR) +
+				" stereochemistry could not be interpreted: a bicyclic von Baeyer ring system with an unambiguously shortest bridge" +
+				" and a single applicable stereocentre could not be identified");
+	}
+
+	private boolean attemptAssignmentOfEndoExoSynAntiToFragment(Fragment fragment, Element stereoChemistryEl) {
+		String descriptor = stereoChemistryEl.getAttributeValue(VALUE_ATR);
+		boolean synOrAnti = "syn".equals(descriptor) || "anti".equals(descriptor);
+		boolean towardsReferenceBridge = "exo".equals(descriptor) || "syn".equals(descriptor);
+		VonBaeyerBicycle bicycle = findVonBaeyerBicycle(fragment);
+		if (bicycle == null) {
+			return false;
+		}
+		//The reference bridge is the bridge that the descriptor is defined relative to.
+		//The other two bridges form the ring that the substituted atom lies on.
+		List<Atom> referenceBridge;
+		List<Atom> firstRingBridge;
+		List<Atom> secondRingBridge;
+		if (synOrAnti) {
+			int locantOfMainBridge1 = lowestNumericLocant(bicycle.mainBridge1);
+			int locantOfMainBridge2 = lowestNumericLocant(bicycle.mainBridge2);
+			if (locantOfMainBridge1 < 0 || locantOfMainBridge2 < 0 || locantOfMainBridge1 == locantOfMainBridge2) {
+				//without numbering it is not determinable which main bridge syn/anti refers to
+				return false;
+			}
+			boolean firstMainBridgeIsLowerNumbered = locantOfMainBridge1 < locantOfMainBridge2;
+			referenceBridge = firstMainBridgeIsLowerNumbered ? bicycle.mainBridge1 : bicycle.mainBridge2;
+			firstRingBridge = bicycle.shortestBridge;
+			secondRingBridge = firstMainBridgeIsLowerNumbered ? bicycle.mainBridge2 : bicycle.mainBridge1;
+		}
+		else {
+			referenceBridge = bicycle.shortestBridge;
+			firstRingBridge = bicycle.mainBridge1;
+			secondRingBridge = bicycle.mainBridge2;
+		}
+
+		//Atoms of the ring that both bridgeheads and the substituted atom lie on, in traversal order
+		List<Atom> ring = new ArrayList<>();
+		ring.add(bicycle.bridgehead1);
+		ring.addAll(firstRingBridge);
+		ring.add(bicycle.bridgehead2);
+		for (int i = secondRingBridge.size() - 1; i >= 0; i--) {
+			ring.add(secondRingBridge.get(i));
+		}
+
+		List<Atom> candidateAtoms = new ArrayList<>(firstRingBridge);
+		if (!synOrAnti) {
+			candidateAtoms.addAll(secondRingBridge);
+		}
+		Atom stereoAtom = findEndoExoSynAntiStereoAtom(fragment, stereoChemistryEl, candidateAtoms, bicycle.ringAtoms);
+		if (stereoAtom == null) {
+			return false;
+		}
+		if (!isUsableEndoExoSynAntiBridgehead(bicycle.bridgehead1) || !isUsableEndoExoSynAntiBridgehead(bicycle.bridgehead2)) {
+			return false;
+		}
+
+		//The three centres are described relative to a single face of the ring:
+		//using the same traversal direction and the same parity for each centre places all
+		//of the atoms in position 2 of the atomRefs4 on the same face of that ring
+		Atom[] atomRefs4Bridgehead1 = createEndoExoSynAntiAtomRefs4(bicycle.bridgehead1, ring, referenceBridge.get(0));
+		Atom[] atomRefs4Bridgehead2 = createEndoExoSynAntiAtomRefs4(bicycle.bridgehead2, ring, referenceBridge.get(referenceBridge.size() - 1));
+		if (atomRefs4Bridgehead1 == null || atomRefs4Bridgehead2 == null) {
+			return false;
+		}
+		int stereoAtomPosition = ring.indexOf(stereoAtom);
+		Atom previousAtom = ring.get((stereoAtomPosition + ring.size() - 1) % ring.size());
+		Atom nextAtom = ring.get((stereoAtomPosition + 1) % ring.size());
+		List<Atom> stereoAtomSubstituents = stereoAtom.getAtomNeighbours();
+		stereoAtomSubstituents.remove(previousAtom);
+		stereoAtomSubstituents.remove(nextAtom);
+		if (stereoAtomSubstituents.size() != 2) {
+			return false;
+		}
+		Atom hydrogen = stereoAtomSubstituents.get(0).getElement() == ChemEl.H ? stereoAtomSubstituents.get(0) : stereoAtomSubstituents.get(1);
+		Atom substituent = stereoAtomSubstituents.get(0) == hydrogen ? stereoAtomSubstituents.get(1) : stereoAtomSubstituents.get(0);
+		if (hydrogen.getElement() != ChemEl.H || substituent.getElement() == ChemEl.H) {
+			return false;
+		}
+		Atom[] atomRefs4StereoAtom = new Atom[]{previousAtom, nextAtom,
+				towardsReferenceBridge ? substituent : hydrogen,
+				towardsReferenceBridge ? hydrogen : substituent};
+
+		//As this is a relative descriptor either enantiomer is an acceptable answer.
+		//If a bridgehead is already defined the existing configuration is respected.
+		boolean enantiomer = false;
+		AtomParity bridgehead1Parity = bicycle.bridgehead1.getAtomParity();
+		AtomParity bridgehead2Parity = bicycle.bridgehead2.getAtomParity();
+		if (bridgehead1Parity != null) {
+			if (!containsSameAtoms(atomRefs4Bridgehead1, bridgehead1Parity.getAtomRefs4())) {
+				return false;
+			}
+			enantiomer = !checkEquivalencyOfAtomsRefs4AndParity(atomRefs4Bridgehead1, 1, bridgehead1Parity.getAtomRefs4(), bridgehead1Parity.getParity());
+		}
+		else if (bridgehead2Parity != null) {
+			if (!containsSameAtoms(atomRefs4Bridgehead2, bridgehead2Parity.getAtomRefs4())) {
+				return false;
+			}
+			enantiomer = !checkEquivalencyOfAtomsRefs4AndParity(atomRefs4Bridgehead2, 1, bridgehead2Parity.getAtomRefs4(), bridgehead2Parity.getParity());
+		}
+		int parity = enantiomer ? -1 : 1;
+
+		StereoGroup relativeStereo = new StereoGroup(StereoGroupType.Rel);
+		if (bridgehead1Parity == null) {
+			bicycle.bridgehead1.setAtomParity(atomRefs4Bridgehead1, parity);
+			bicycle.bridgehead1.setStereoGroup(relativeStereo);
+		}
+		if (bridgehead2Parity == null) {
+			bicycle.bridgehead2.setAtomParity(atomRefs4Bridgehead2, parity);
+			bicycle.bridgehead2.setStereoGroup(relativeStereo);
+		}
+		stereoAtom.setAtomParity(atomRefs4StereoAtom, parity);
+		stereoAtom.setStereoGroup(relativeStereo);
+		notExplicitlyDefinedStereoCentreMap.remove(bicycle.bridgehead1);
+		notExplicitlyDefinedStereoCentreMap.remove(bicycle.bridgehead2);
+		notExplicitlyDefinedStereoCentreMap.remove(stereoAtom);
+		return true;
+	}
+
+	/**
+	 * Determines which atom the endo/exo/syn/anti descriptor applies to.
+	 * If a locant was given that atom is used, otherwise there must be exactly one applicable atom
+	 * @param fragment
+	 * @param stereoChemistryEl
+	 * @param candidateAtoms atoms of the bridge(s) that the descriptor may apply to
+	 * @param ringAtoms all atoms of the bicyclic ring system
+	 * @return the atom or null
+	 */
+	private Atom findEndoExoSynAntiStereoAtom(Fragment fragment, Element stereoChemistryEl, List<Atom> candidateAtoms, Set<Atom> ringAtoms) {
+		String locant = stereoChemistryEl.getAttributeValue(LOCANT_ATR);
+		if (locant != null) {
+			Atom atom = fragment.getAtomByLocant(locant);
+			if (atom == null || !candidateAtoms.contains(atom) || !isSubstitutedEndoExoSynAntiAtom(atom, ringAtoms)) {
+				return null;
+			}
+			return atom;
+		}
+		Atom found = null;
+		for (Atom candidateAtom : candidateAtoms) {
+			if (isSubstitutedEndoExoSynAntiAtom(candidateAtom, ringAtoms)) {
+				if (found != null) {
+					//ambiguous which atom the descriptor applies to
+					return null;
+				}
+				found = candidateAtom;
+			}
+		}
+		return found;
+	}
+
+	/**
+	 * An atom that endo/exo/syn/anti can be applied to must be a stereocentre bearing
+	 * exactly one hydrogen and exactly one substituent that is not part of the ring system
+	 * @param atom
+	 * @param ringAtoms
+	 * @return
+	 */
+	private boolean isSubstitutedEndoExoSynAntiAtom(Atom atom, Set<Atom> ringAtoms) {
+		if (atom.getAtomParity() != null || !atomStereoCentreMap.containsKey(atom)) {
+			return false;
+		}
+		List<Atom> neighbours = atom.getAtomNeighbours();
+		if (neighbours.size() != 4) {
+			return false;
+		}
+		int hydrogenCount = 0;
+		int substituentCount = 0;
+		for (Atom neighbour : neighbours) {
+			if (neighbour.getElement() == ChemEl.H) {
+				hydrogenCount++;
+			}
+			else if (!ringAtoms.contains(neighbour)) {
+				substituentCount++;
+			}
+		}
+		return hydrogenCount == 1 && substituentCount == 1;
+	}
+
+	private boolean isUsableEndoExoSynAntiBridgehead(Atom atom) {
+		return atom.getAtomNeighbours().size() == 4 && atomStereoCentreMap.containsKey(atom);
+	}
+
+	/**
+	 * Creates atomRefs4 of the form: previous ring atom, next ring atom, atom towards the reference bridge, remaining atom
+	 * @param atom a bridgehead
+	 * @param ring the ring that the substituted atom lies on, in traversal order
+	 * @param atomTowardsReferenceBridge
+	 * @return atomRefs4 or null if the atom is not tetrahedral
+	 */
+	private Atom[] createEndoExoSynAntiAtomRefs4(Atom atom, List<Atom> ring, Atom atomTowardsReferenceBridge) {
+		int position = ring.indexOf(atom);
+		if (position < 0) {
+			return null;
+		}
+		Atom previousAtom = ring.get((position + ring.size() - 1) % ring.size());
+		Atom nextAtom = ring.get((position + 1) % ring.size());
+		List<Atom> neighbours = atom.getAtomNeighbours();
+		if (neighbours.size() != 4) {
+			return null;
+		}
+		if (!neighbours.remove(previousAtom) || !neighbours.remove(nextAtom) || !neighbours.remove(atomTowardsReferenceBridge)) {
+			return null;
+		}
+		return new Atom[]{previousAtom, nextAtom, atomTowardsReferenceBridge, neighbours.get(0)};
+	}
+
+	private static boolean containsSameAtoms(Atom[] atomRefs4, Atom[] otherAtomRefs4) {
+		for (Atom atom : atomRefs4) {
+			boolean found = false;
+			for (Atom otherAtom : otherAtomRefs4) {
+				if (atom == otherAtom) {
+					found = true;
+					break;
+				}
+			}
+			if (!found) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static int lowestNumericLocant(List<Atom> atoms) {
+		int lowest = Integer.MAX_VALUE;
+		for (Atom atom : atoms) {
+			String locant = atom.getFirstLocant();
+			if (locant == null) {
+				return -1;
+			}
+			try {
+				int value = Integer.parseInt(locant);
+				if (value < lowest) {
+					lowest = value;
+				}
+			}
+			catch (NumberFormatException e) {
+				return -1;
+			}
+		}
+		return lowest == Integer.MAX_VALUE ? -1 : lowest;
+	}
+
+	/**
+	 * Identifies a bicyclic von Baeyer ring system i.e. exactly two bridgeheads joined by three bridges.
+	 * The shortest bridge must be strictly shorter than both of the other bridges and must contain at
+	 * least one atom, otherwise which bridge endo/exo is defined relative to would be ambiguous
+	 * (e.g. bicyclo[2.2.2]octane has no endo/exo distinction at all)
+	 * @param fragment
+	 * @return the ring system or null if the fragment is not a suitable bicyclic ring system
+	 */
+	private static VonBaeyerBicycle findVonBaeyerBicycle(Fragment fragment) {
+		List<Ring> rings = SSSRFinder.getSetOfSmallestRings(fragment);
+		if (rings.size() != 2) {
+			return null;
+		}
+		Set<Bond> ringBonds = new LinkedHashSet<>();
+		Set<Atom> ringAtoms = new LinkedHashSet<>();
+		for (Ring ring : rings) {
+			ringBonds.addAll(ring.getBondList());
+			ringAtoms.addAll(ring.getAtomList());
+		}
+		List<Atom> bridgeheads = new ArrayList<>();
+		for (Atom atom : ringAtoms) {
+			int ringBondCount = 0;
+			for (Bond bond : atom.getBonds()) {
+				if (ringBonds.contains(bond)) {
+					ringBondCount++;
+				}
+			}
+			if (ringBondCount == 3) {
+				bridgeheads.add(atom);
+			}
+			else if (ringBondCount != 2) {
+				return null;
+			}
+		}
+		if (bridgeheads.size() != 2) {
+			return null;
+		}
+		List<List<Atom>> bridges = CycleDetector.getPathBetweenAtomsUsingBonds(bridgeheads.get(0), bridgeheads.get(1), ringBonds);
+		if (bridges.size() != 3) {
+			return null;
+		}
+		int atomsInBridges = 0;
+		for (List<Atom> bridge : bridges) {
+			atomsInBridges += bridge.size();
+		}
+		if (atomsInBridges + 2 != ringAtoms.size()) {
+			return null;
+		}
+		Collections.sort(bridges, new Comparator<List<Atom>>() {
+			public int compare(List<Atom> bridge1, List<Atom> bridge2) {
+				return Integer.compare(bridge1.size(), bridge2.size());
+			}
+		});
+		if (bridges.get(0).isEmpty() || bridges.get(0).size() >= bridges.get(1).size()) {
+			return null;
+		}
+		return new VonBaeyerBicycle(bridgeheads.get(0), bridgeheads.get(1), bridges.get(0), bridges.get(1), bridges.get(2), ringAtoms);
+	}
+
+	/**
+	 * Two bridgeheads joined by three bridges. Each bridge is ordered from bridgehead1 to bridgehead2
+	 */
+	private static class VonBaeyerBicycle {
+		private final Atom bridgehead1;
+		private final Atom bridgehead2;
+		private final List<Atom> shortestBridge;
+		private final List<Atom> mainBridge1;
+		private final List<Atom> mainBridge2;
+		private final Set<Atom> ringAtoms;
+
+		VonBaeyerBicycle(Atom bridgehead1, Atom bridgehead2, List<Atom> shortestBridge, List<Atom> mainBridge1, List<Atom> mainBridge2, Set<Atom> ringAtoms) {
+			this.bridgehead1 = bridgehead1;
+			this.bridgehead2 = bridgehead2;
+			this.shortestBridge = shortestBridge;
+			this.mainBridge1 = mainBridge1;
+			this.mainBridge2 = mainBridge2;
+			this.ringAtoms = ringAtoms;
+		}
 	}
 
 	/**
