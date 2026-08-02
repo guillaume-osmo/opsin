@@ -565,6 +565,7 @@ class ComponentProcessor {
 					b.setOrder(1);
 					b.getFromAtom().setSpareValency(true);
 					b.getToAtom().setSpareValency(true);
+					parentFrag.setMobileRingUnsaturation(true);
 				}
 			}
 		}

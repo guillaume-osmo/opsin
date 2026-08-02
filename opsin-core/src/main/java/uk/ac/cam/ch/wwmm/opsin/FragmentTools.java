@@ -514,6 +514,75 @@ class FragmentTools {
 	 * @param frag
      * @throws StructureBuildingException If the algorithm can't work out where to put the bonds
 	 */
+	/**
+	 * Moves a spare valency that has been stranded in a ring, i.e. left with no
+	 * neighbouring atom that can pair with it, onto an adjacent pair of ring atoms that
+	 * can still accept a double bond. Only acts when exactly one such pair is available,
+	 * so that an ambiguous choice is never made silently.
+	 */
+	private static void relocateStrandedRingSpareValency(Fragment frag) throws StructureBuildingException {
+		if (!frag.hasMobileRingUnsaturation()) {
+			return;
+		}
+		for (Atom a : frag.getAtomList()) {
+			if (!a.hasSpareValency() || !a.getAtomIsInACycle()) {
+				continue;
+			}
+			boolean hasSpareValentNeighbour = false;
+			for (Atom neighbour : frag.getIntraFragmentAtomNeighbours(a)) {
+				if (neighbour.hasSpareValency()) {
+					hasSpareValentNeighbour = true;
+					break;
+				}
+			}
+			if (hasSpareValentNeighbour) {
+				continue;
+			}
+			List<Bond> candidates = new ArrayList<>();
+			for (Bond b : frag.getBondSet()) {
+				if (b.getOrder() != 1) {
+					continue;
+				}
+				Atom from = b.getFromAtom();
+				Atom to = b.getToAtom();
+				if (from == a || to == a || !from.getAtomIsInACycle() || !to.getAtomIsInACycle()) {
+					continue;
+				}
+				if (canAcceptSpareValency(from) && canAcceptSpareValency(to)) {
+					candidates.add(b);
+				}
+			}
+			if (candidates.size() > 1) {
+				//a heteroatom that could formally expand its valency is not a plausible
+				//home for the ring's double bond while a carbon-carbon option exists
+				List<Bond> carbonCarbon = new ArrayList<>();
+				for (Bond b : candidates) {
+					if (b.getFromAtom().getElement() == ChemEl.C && b.getToAtom().getElement() == ChemEl.C) {
+						carbonCarbon.add(b);
+					}
+				}
+				candidates = carbonCarbon;
+			}
+			Bond candidate = candidates.size() == 1 ? candidates.get(0) : null;
+			if (candidate != null) {
+				a.setSpareValency(false);
+				candidate.getFromAtom().setSpareValency(true);
+				candidate.getToAtom().setSpareValency(true);
+			}
+		}
+	}
+
+	private static boolean canAcceptSpareValency(Atom a) throws StructureBuildingException {
+		if (a.hasSpareValency()) {
+			return false;
+		}
+		a.setSpareValency(true);
+		a.ensureSvConsistentWithValency(true);
+		boolean accepted = a.hasSpareValency();
+		a.setSpareValency(false);
+		return accepted;
+	}
+
 	static void convertSpareValenciesToDoubleBonds(Fragment frag) throws StructureBuildingException {
 		List<Atom> atomCollection = frag.getAtomList();
 		/* pick atom, getAtomNeighbours, decideIfTerminal, resolve */
@@ -524,6 +593,16 @@ class FragmentTools {
 		for(Atom a : atomCollection) {
 			a.ensureSvConsistentWithValency(true);
 		}
+
+		/*
+		 * The spare valency of a partially unsaturated ring, e.g. imidazoline or
+		 * isothiazoline, is mobile: the double bond belongs to the ring rather than to
+		 * the two atoms the token happened to name. If a suffix has since blocked the
+		 * default position, as in isothiazolin-3-one where the 3-one occupies C3, move
+		 * the unsaturation to a pair of ring atoms that can still take it instead of
+		 * discarding it and silently returning the fully saturated ring.
+		 */
+		relocateStrandedRingSpareValency(frag);
 
 		/*
 		 * Remove spare valency on atoms that are not adjacent to another atom with spare valency

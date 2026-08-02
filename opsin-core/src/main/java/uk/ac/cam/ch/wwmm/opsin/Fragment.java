@@ -53,6 +53,10 @@ class Fragment implements Iterable<Atom> {
 
 	/**The atoms in the fragment that have been indicated to have hydrogen at the SMILES level.*/
 	private final List<Atom> indicatedHydrogen = new ArrayList<>();
+
+	/** True if this ring's unsaturation came from a partially unsaturated ring token
+	 * such as imidazoline, in which case the double bond is mobile within the ring. */
+	private boolean mobileRingUnsaturation = false;
 	
 	/**Pseudo atoms indicating start and end of polymer structure repeat unit*/
 	private List<Atom> polymerAttachmentPoints =  null;
@@ -640,7 +644,12 @@ class Fragment implements Iterable<Atom> {
 	public Iterator<Atom> iterator() {
 		return atomCollection.iterator();
 	}
+
+	boolean hasMobileRingUnsaturation() {
+		return mobileRingUnsaturation;
+	}
+
+	void setMobileRingUnsaturation(boolean mobileRingUnsaturation) {
+		this.mobileRingUnsaturation = mobileRingUnsaturation;
+	}
 }
-
-
-

@@ -1,0 +1,5 @@
+isothiazolin-3-one	InChI=1S/C3H3NOS/c5-3-1-2-6-4-3/h1-2H,(H,4,5)
+isoxazolin-3-one	InChI=1S/C3H3NO2/c5-3-1-2-6-4-3/h1-2H,(H,4,5)
+imidazolin-2-one	InChI=1S/C3H4N2O/c6-3-4-1-2-5-3/h1-2H,(H2,4,5,6)
+isothiazolidin-3-one	InChI=1S/C3H5NOS/c5-3-1-2-6-4-3/h1-2H2,(H,4,5)
+imidazolidin-2-one	InChI=1S/C3H6N2O/c6-3-4-1-2-5-3/h1-2H2,(H2,4,5,6)
