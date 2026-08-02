@@ -160,7 +160,10 @@ public class Cli {
 		threadsBuilder.hasArg();
 		threadsBuilder.argName("count");
 		threadsBuilder.desc("Number of names to interpret concurrently (default 1)." + OpsinTools.NEWLINE
-				+ "Output order always matches input order. Use 0 for one thread per available processor.");
+				+ "Output order always matches input order." + OpsinTools.NEWLINE
+				+ "0 means one thread per available processor. Note that on a machine with both" + OpsinTools.NEWLINE
+				+ "performance and efficiency cores, throughput peaks near the performance core" + OpsinTools.NEWLINE
+				+ "count and falls off beyond it, so 0 may not be the fastest setting.");
 		options.addOption(threadsBuilder.build());
 		return options;
 	}
