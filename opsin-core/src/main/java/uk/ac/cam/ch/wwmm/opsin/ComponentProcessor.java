@@ -2797,6 +2797,37 @@ class ComponentProcessor {
 					}	
 				}
 				if (!implicitHydrogenExplicitlySet){
+					//"21,23-dihydro" restates the indicated hydrogen a porphyrin already has, so it is
+					//redundant rather than contradictory. PubChem writes the free base this way rather than
+					//as 21H,23H-porphyrin, and because only indicated hydrogen was recognised above, the
+					//21/23 hydrogen was applied anyway and the prefix was then rejected for landing on an
+					//atom that is no longer unsaturated. Consuming it leaves exactly the structure the
+					//indicated hydrogen spelling gives.
+					//The whole cited set must be 21 and 23 and nothing else. Any other nitrogen means a
+					//different tautomer, and honouring only part of such a set would put hydrogen on three
+					//nitrogens: 21,22-dihydroporphyrin must keep failing rather than quietly become that.
+					List<Element> nitrogenHydroEls = new ArrayList<>();
+					boolean onlyDefaultNitrogensCited = true;
+					for (Element hydroEl : group.getParent().getChildElements(HYDRO_EL)) {
+						if (hydroEl.getValue().startsWith("per")) {
+							continue;
+						}
+						String hydroLocant = hydroEl.getAttributeValue(LOCANT_ATR);
+						if (hydroLocant == null) {
+							continue;
+						}
+						if (hydroLocant.equals("21") || hydroLocant.equals("23")) {
+							nitrogenHydroEls.add(hydroEl);
+						}
+						else if (hydroLocant.equals("22") || hydroLocant.equals("24")) {
+							onlyDefaultNitrogensCited = false;
+						}
+					}
+					if (onlyDefaultNitrogensCited && nitrogenHydroEls.size() == 2) {
+						for (Element hydroEl : nitrogenHydroEls) {
+							hydroEl.detach();
+						}
+					}
 					//porphyrins implicitly have indicated hydrogen at the 21/23 positions
 					//directly modify the fragment to avoid problems with locants in for example ring assemblies
 					Fragment frag = group.getFrag();
