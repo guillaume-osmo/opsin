@@ -20,3 +20,5 @@ alpha-decanosultone
 diphenylfluoranuide
 tetrachloroiodanuide
 chlorine(2+) trihydride
+1-methylthiophene
+1-methylselenophene
