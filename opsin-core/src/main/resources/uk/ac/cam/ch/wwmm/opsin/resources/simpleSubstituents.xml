@@ -432,7 +432,7 @@
 		<token value="-[Zr]">zirconio</token>
 		<!--fragrance and flavour trivial names: constitution only unless the name itself defines the configuration (cf. menthol)-->
 		<token value="-C1CC(C(C)=C)CC=C1C">carvyl</token>
-		<token value="-C1(C)CCC23CC1C(C)(C)C2CCC3C">cedryl</token>
+		<token value="-[C@]1(C)CC[C@@]23C[C@@H]1C(C)(C)[C@@H]2CC[C@H]3C">cedryl</token><!--from the natural (+)-cedrol, CAS 77-53-2-->
 		<token value="-C1CC(C(C)=C)CCC1C">dihydrocarvyl</token>
 		<token value="-C(C)(CC)CCC=C(C)C">dihydrolinalyl</token>
 		<token value="-C(C)(C)Cc1ccccc1">dimethyl benzyl carbinyl</token>
